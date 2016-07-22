@@ -1,0 +1,17 @@
+{
+  "name": "va-model",
+  "version": "0.0.1",
+  "description": "The model that interacts with Firebase using Polymer.",
+  "main": [
+    "va-model-behavior.html"
+  ],
+  "license" : "MIT",
+  "dependencies": {
+    "promise-polyfill": "polymerlabs/promise-polyfill#^1.0.0",
+    "polymer": "polymer/polymer#^1.6.0",
+    "polymerfire": "firebase/polymerfire#^0.9.2"
+  },
+  "devDependencies": {
+    "web-component-tester": "^4.0.0"
+  }
+}
