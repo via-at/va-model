@@ -1,0 +1,197 @@
+<link rel="import" href="../polymerfire/firebase-database-behavior.html">
+
+<script>
+  VA.ModelBehaviorImpl = {
+    
+    properties: {
+      
+      key: {
+        type: String,
+        observer: '_keyChanged'
+      },
+      
+      path: {
+        type: String
+      },
+      
+      data: {
+        type: Object
+      },
+      
+      preData: {
+        type: Object
+      },
+      
+      relationships: {
+        type: Object
+      },
+      
+      assoc: {
+        notify: true,
+        value: {}
+      }
+    },
+    
+    get isNew() {
+      return !this.path;
+    },
+    
+    get zeroValue() {
+      return {};
+    },
+    
+    create: function () {
+      this.ref.push(this.preData);
+    },
+    
+    merge: function (target, notMergeDeps) {
+      if (this.qualifiedElement(target)) {
+        var transaction = {};
+        
+        transaction[this.relationshipPath(target)] = true;
+        
+        if (target.qualifiedElement(this)) {
+          transaction[target.relationshipPath(this)] = true;
+        }
+        
+        this.ref.root.update(transaction);
+      }
+    },
+    
+    unmerge: function (target, notMergeDeps) {
+      if (this.qualifiedElement(target)) {
+        var transaction = {};
+        
+        transaction[this.relationshipPath(target)] = null;
+        
+        if (target.qualifiedElement(this)) {
+          transaction[target.relationshipPath(this)] = null;
+        }
+        
+        this.ref.root.update(transaction);
+      }
+    },
+    
+    remove: function () {
+      if (this.key) {
+        var promises = [];
+        
+        for (var tagName in this.relationships) {
+          promises.push(new Promise(function (resolve, reject) {
+            var elem = document.createElement(tagName);
+            var docPath = elem.relationships[this.tagName.toLowerCase()] + '/' + this.key;
+            var ref = this.db.ref(elem.path).orderByChild(docPath).equalTo(true);
+            var root = this.ref.root.toString();
+            
+            ref.once('value', function (snapshot) {
+              var refs = [];
+              snapshot.forEach(function (s) {
+                refs.push(s.ref.toString().replace(root, '') + '/' + docPath);
+              });
+              resolve(refs);
+            });
+          }.bind(this)));
+        }
+        
+        Promise.all(promises).then(function (refs) {
+          var transaction = {};
+          
+          for (var i in refs) {
+            for (var j in refs[i]) {
+              transaction[refs[i][j]] = null;
+            }
+          }
+          
+          transaction[this.path + '/' + this.key] = null;
+          this.ref.root.update(transaction);
+        }.bind(this));
+      }
+    },
+    
+    /**
+     * @override
+     */
+    save: function () {
+      this.data = this.preData;
+    },
+    
+    /**
+     * @override
+     */
+    setStoredValue: function (path, value) {
+      var keys = Object.getOwnPropertyNames(value);
+      
+      if (this.key && keys.length > 0) {
+        this.ref.child(this.key).set(value);
+      }
+    },
+    
+    relationshipPath: function (elem) {
+      var tagName = elem.tagName.toLowerCase();
+      return this.path + '/' + this.key + '/' + this.relationships[tagName] + '/' + elem.key;
+    },
+    
+    qualifiedElement: function (elem) {
+      return this.key
+        && 'tagName' in elem
+        && elem.key
+        && elem.tagName.toLowerCase() in this.relationships;
+    },
+    
+    _indexFromAssocKey: function (rel, key) {
+      var assoc = this.get(['assoc', rel]);
+                
+      for (var i = 0; i < assoc.length; i++) {
+        if (assoc[i].$key === key) return i;
+      }
+      
+      return -1;
+    },
+    
+    _childValueChanged: function (rel, assocKey, snapshot) {
+      var value = snapshot.val();
+      if (value) {
+        value.$key = assocKey;
+        this.set(['assoc', rel, this._indexFromAssocKey(rel, assocKey)], value);
+      }
+    },
+    
+    _childAdded: function (rel, assocPath, snapshot) {
+      var assocKey = snapshot.key;
+      var value = { $key: assocKey };
+      
+      this.push(['assoc', rel], value);
+      this.db.ref(assocPath).child(assocKey).on('value', this._childValueChanged.bind(this, rel, assocKey));
+    },
+    
+    _childRemoved: function (rel, snapshot) {
+      this.splice(['assoc', rel], this._indexFromAssocKey(rel, snapshot.key), 1);
+    },
+    
+    _retriveOn: function (rel, assocPath) {
+      var ref = this.ref.child(this.key).child(rel);
+      
+      this.set(['assoc', rel], []);
+      ref.on('child_added', this._childAdded.bind(this, rel, assocPath));
+      ref.on('child_removed', this._childRemoved.bind(this, rel));
+    },
+    
+    _keyChanged: function (newKey, oldKey) {
+      if (this.key && !oldKey) {
+        for (var tagName in this.relationships) {
+          var rel = this.relationships[tagName];
+          
+          if (this.getAttribute('retrive-' + rel) !== null) {
+            this._retriveOn(rel, document.createElement(tagName).path);
+          }
+        }
+      }
+    }
+    
+  };
+  
+  VA.ModelBehavior = [
+    Polymer.FirebaseDatabaseBehavior,
+    VA.ModelBehaviorImpl
+  ];
+</script>

@@ -1,0 +1,33 @@
+<dom-module id="va-model-demo-auth">
+  
+  <template>
+    
+    <firebase-auth id="auth" provider="google"></firebase-auth>
+    
+  </template>
+  
+  <script>
+    Polymer({
+      
+      is: 'va-model-demo-auth',
+      
+      attached: function () {
+        this.$.auth.auth.onAuthStateChanged(this._onAuthStateChanged.bind(this));
+      },
+      
+      signIn: function () {
+        this.$.auth.signInWithPopup();
+      },
+
+      _onAuthStateChanged: function (user) {
+        if (user) {
+          console.log(user.uid);
+        } else {
+          console.log('UNAUTH!');
+        }
+      }
+      
+    })
+  </script>
+  
+</dom-module>

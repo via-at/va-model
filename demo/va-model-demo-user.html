@@ -1,0 +1,26 @@
+<dom-module id="va-model-demo-user">
+  
+  <script>
+    Polymer({
+      
+      is: 'va-model-demo-user',
+      
+      behaviors: [VA.ModelBehavior],
+      
+      properties: {
+        
+        path: {
+          value: '/users'
+        },
+        
+        relationships: {
+          value: {
+            'va-model-demo-document': 'documents'
+          }
+        },
+      }
+      
+    });
+  </script>
+  
+</dom-module>

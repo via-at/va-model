@@ -1,0 +1,114 @@
+<dom-module id="va-model-demo">
+  
+  <template>
+      
+    <va-model-demo-auth id="auth"></va-model-demo-auth>
+    
+    <va-model-demo-document
+      id="doc"
+      key="test"
+      pre-data="{{document}}"></va-model-demo-document>
+      
+    <va-model-demo-document
+      id="doc2"
+      key="test2"
+      pre-data="{{document2}}"></va-model-demo-document>
+    
+    <va-model-demo-user
+      retrive-documents
+      assoc="{{assoc}}"
+      id="user"
+      key="test"
+      pre-data="{{user}}"></va-model-demo-user>
+      
+    <h3>Documents:</h3>
+    <template is="dom-repeat" items="{{assoc.documents}}">
+      <div>{{item.data}}</div>
+    </template>
+    
+    <button on-click="_auth">AUTH!</button>
+    <button on-click="_createDoc">CREATE DOC!</button>
+    <button on-click="_saveDoc">SAVE DOC!</button>
+    <button on-click="_saveDoc2">SAVE DOC 2!</button>
+    <button on-click="_removeDoc">REMOVE DOC!</button>
+    <button on-click="_createUser">CREATE USER!</button>
+    <button on-click="_saveUser">SAVE USER!</button>
+    <button on-click="_removeUser">REMOVE USER!</button>
+    <button on-click="_merge">MERGE FOR USER!</button>
+    <button on-click="_unmerge">UNMERGE FOR USER!</button>
+    
+  </template>
+  
+  <script>
+    Polymer({
+      
+      is: 'va-model-demo',
+      
+      properties: {
+        
+        document: {
+          value: {
+            data: 'test'
+          }
+        },
+        
+        document2: {
+          value: {
+            data: 'test2'
+          }
+        },
+        
+        user: {
+          value: {
+            firstName: 'shorn',
+            lastName: 'conely'
+          }
+        }
+      },
+      
+      _auth: function () {
+        this.$.auth.signIn();
+      },
+      
+      _createDoc: function () {
+        this.$.doc.create();
+      },
+      
+      _saveDoc: function () {
+        this.$.doc.save();
+      },
+      
+      _saveDoc2: function () {
+        this.$.doc2.save();
+      },
+      
+      _createUser: function () {
+        this.$.user.create();
+      },
+      
+      _saveUser: function () {
+        this.$.user.save();
+      },
+      
+      _merge: function () {
+        this.$.user.merge(this.$.doc);
+        this.$.user.merge(this.$.doc2);
+      },
+      
+      _unmerge: function () {
+        this.$.user.unmerge(this.$.doc);
+        this.$.user.unmerge(this.$.doc2);
+      },
+      
+      _removeDoc: function () {
+        this.$.doc.remove();
+      },
+      
+      _removeUser: function () {
+        this.$.user.remove();
+      }
+      
+    });
+  </script>
+  
+</dom-module>
