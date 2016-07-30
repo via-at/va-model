@@ -1,6 +1,42 @@
 <link rel="import" href="../polymerfire/firebase-database-behavior.html">
 
 <script>
+  VA.Transaction = function Transaction(appName) {
+    var app = appName ? firebase.app(appName) : firebase.app();
+    this._appName = appName;
+    this._db = app ? app.database() : null;
+    this._transactions = {};
+  };
+  
+  VA.Transaction.prototype.appName = function () {
+    return this._appName;
+  };
+  
+  VA.Transaction.prototype.push = function (path, value) {
+    this._transactions[path] = value;
+  };
+  
+  VA.Transaction.prototype.list = function () {
+    return this._transactions;
+  };
+  
+  VA.Transaction.prototype.merge = function (transaction) {
+    if (transaction instanceof VA.Transaction) {
+      if (this._appName === transaction.appName()) {
+        var lists = transaction.list();
+        for (var path in lists) {
+          this._transactions[path] = lists[path];
+        }
+      } else {
+        console.warn("Source app name '" + transaction.appName() + "' and destination app name '" + this._appName +"' are difference.");
+      }
+    }
+  };
+  
+  VA.Transaction.prototype.update = function () {
+    this._db.ref.root.update(this._transactions);
+  };
+  
   VA.ModelBehaviorImpl = {
     
     properties: {
@@ -22,13 +58,31 @@
         type: Object
       },
       
+      parents: {
+        type: Object
+      },
+      
       relationships: {
         type: Object
       },
       
-      assoc: {
+      assocKeys: {
         notify: true,
-        value: {}
+        value: function () {
+          return {};
+        }
+      },
+      
+      _relations: {
+        value: function () {
+          return {};
+        }
+      },
+      
+      _refs: {
+        value: function () {
+          return [];
+        }
       }
     },
     
@@ -44,31 +98,59 @@
       this.ref.push(this.preData);
     },
     
-    merge: function (target, notMergeDeps) {
-      if (this.qualifiedElement(target)) {
-        var transaction = {};
+    attached: function () {
+      for (var tagName in this.parents) {
+        this._initializeRelations('parent', this.parents[tagName], tagName);
+      }
+      
+      for (var tagName in this.relationships) {
+        this._initializeRelations('relationship', this.relationships[tagName], tagName);
+      }
+      
+      this._initialize();
+    },
+    
+    detached: function () {
+      this._unitilialize();
+    },
+    
+    transaction: function () {
+      return new VA.Transaction(this.appName);
+    },
+    
+    link: function (target, nonInverse) {
+      if (this.linkable(target)) {
+        var transaction = this.transaction();
         
-        transaction[this.relationshipPath(target)] = true;
-        
-        if (target.qualifiedElement(this)) {
-          transaction[target.relationshipPath(this)] = true;
+        if (this.isParent(target.is)) {
+          transaction.push(this.fullRelationPath(target.is), target.key);
+        } else if (this.isRelationship(target.is)) {
+          transaction.push(this.fullRelationPath(target.is) + '/' + target.key, true);
         }
         
-        this.ref.root.update(transaction);
+        if (!nonInverse) {
+          transaction.merge(target.link(this, true));
+        }
+        
+        return transaction;
       }
     },
     
-    unmerge: function (target, notMergeDeps) {
-      if (this.qualifiedElement(target)) {
-        var transaction = {};
+    unlink: function (target, nonInverse) {
+      if (this.linkable(target)) {
+        var transaction = this.transaction();
         
-        transaction[this.relationshipPath(target)] = null;
-        
-        if (target.qualifiedElement(this)) {
-          transaction[target.relationshipPath(this)] = null;
+        if (this.isParent(target.is)) {
+          transaction.push(this.fullRelationPath(target.is), null);
+        } else if (this.isRelationship(target.is)) {
+          transaction.push(this.fullRelationPath(target.is) + '/' + target.key, null);
         }
         
-        this.ref.root.update(transaction);
+        if (!nonInverse) {
+          transaction.merge(target.unlink(this, true));
+        }
+        
+        return transaction;
       }
     },
     
@@ -78,15 +160,14 @@
         
         for (var tagName in this.relationships) {
           promises.push(new Promise(function (resolve, reject) {
-            var elem = document.createElement(tagName);
-            var docPath = elem.relationships[this.tagName.toLowerCase()] + '/' + this.key;
-            var ref = this.db.ref(elem.path).orderByChild(docPath).equalTo(true);
+            var ref = this._relation(tagName).orderByModel(this).equalTo(true);
             var root = this.ref.root.toString();
             
             ref.once('value', function (snapshot) {
               var refs = [];
               snapshot.forEach(function (s) {
-                refs.push(s.ref.toString().replace(root, '') + '/' + docPath);
+                //refs.push(s.ref.toString().replace(root, '') + '/' + docPath);
+                console.log(s.ref.toString());
               });
               resolve(refs);
             });
@@ -103,7 +184,6 @@
           }
           
           transaction[this.path + '/' + this.key] = null;
-          this.ref.root.update(transaction);
         }.bind(this));
       }
     },
@@ -122,72 +202,147 @@
       var keys = Object.getOwnPropertyNames(value);
       
       if (this.key && keys.length > 0) {
+        console.log(value, this.key)
         this.ref.child(this.key).set(value);
       }
     },
     
-    relationshipPath: function (elem) {
-      var tagName = elem.tagName.toLowerCase();
-      return this.path + '/' + this.key + '/' + this.relationships[tagName] + '/' + elem.key;
+    isParent: function (tagName) {
+      return this._relations[tagName].type === 'parent';
     },
     
-    qualifiedElement: function (elem) {
-      return this.key
-        && 'tagName' in elem
-        && elem.key
-        && elem.tagName.toLowerCase() in this.relationships;
+    isRelationship: function (tagName) {
+      return this._relations[tagName].type === 'relationship';
     },
     
-    _indexFromAssocKey: function (rel, key) {
-      var assoc = this.get(['assoc', rel]);
-                
-      for (var i = 0; i < assoc.length; i++) {
-        if (assoc[i].$key === key) return i;
+    basePath: function () {
+      return this.path + '/' + this.key;
+    },
+    
+    relationPath: function (tagName) {
+      return this._relations[tagName].path;
+    },
+    
+    fullRelationPath: function (tagName) {
+      return this.basePath() + '/' + this.relationPath(tagName);
+    },
+    
+    linkable: function (elem) {
+      return this.key && elem.key && elem.is in this._relations;
+    },
+    
+    orderByModel: function (elem) {
+      var ref;
+      
+      if (this.isParent(elem.is)) {
+        ref = this.ref.orderByChild(this.relationPath(elem.is));
+      } else if (this.isRelationship(elem.is)) {
+        ref = this.ref.orderByChild(this.relationPath(elem.is) + '/' + elem.key);
       }
       
-      return -1;
+      return ref;
     },
     
-    _childValueChanged: function (rel, assocKey, snapshot) {
-      var value = snapshot.val();
-      if (value) {
-        value.$key = assocKey;
-        this.set(['assoc', rel, this._indexFromAssocKey(rel, assocKey)], value);
+    _linkedRelationship: function (path, snapshot) {
+      this.push(['assocKeys', path], snapshot.key);
+    },
+    
+    _unlinkedRelationship: function (path, snapshot) {
+      var index;
+      var len = this.assocKeys.path.length;
+      for (index = 0; index < len; index++) {
+        if (this.assocKeys.path[index] === snapshot.key) {
+          break;
+        }
       }
+      this.splice(['assocKeys', path], index, 1);
     },
     
-    _childAdded: function (rel, assocPath, snapshot) {
-      var assocKey = snapshot.key;
-      var value = { $key: assocKey };
+    _changedParent: function (path, snapshot) {
+      this.set(['assocKeys', path], snapshot.val());
+    },
+    
+    _changedData: function (snapshot) {
+      this.data = snapshot.val();
+    },
+    
+    _unitilialize: function () {
+      this._refs.forEach(function (ref) {
+        this.db.ref(ref.path).off(ref.type, ref.callback);
+      }.bind(this));
       
-      this.push(['assoc', rel], value);
-      this.db.ref(assocPath).child(assocKey).on('value', this._childValueChanged.bind(this, rel, assocKey));
+      this._refs = [];
+      this.assocKeys = {};
+      this.data = this.zeroValue;
+      this.preData = this.zeroValue;
     },
     
-    _childRemoved: function (rel, snapshot) {
-      this.splice(['assoc', rel], this._indexFromAssocKey(rel, snapshot.key), 1);
+    _refOn: function (type, path, callback) {
+      this.db.ref(path).on(type, callback);
+      this._refs.push({
+        type: type,
+        path: path,
+        callback: callback
+      });
     },
     
-    _retriveOn: function (rel, assocPath) {
-      var ref = this.ref.child(this.key).child(rel);
+    _initialize: function () {
+      this._refOn('value', this.basePath(), this._changedData.bind(this));
       
-      this.set(['assoc', rel], []);
-      ref.on('child_added', this._childAdded.bind(this, rel, assocPath));
-      ref.on('child_removed', this._childRemoved.bind(this, rel));
+      for (var tagName in this._relations) {
+        var rel = this._relations[tagName];
+        var path = this.basePath() + '/' + rel.path;
+        
+        this._resetAssocKeys(rel.type, rel.path);
+        
+        if (rel.type === 'parent') {
+          this._refOn('value', path, this._changedParent.bind(this, rel.path));
+        } else if (rel.type === 'relationship') {
+          this._refOn('child_added', path, this._linkedRelationship.bind(this, rel.path));
+          this._refOn('child_removed', path, this._unlinkedRelationship.bind(this, rel.path));
+        }
+      }
     },
     
     _keyChanged: function (newKey, oldKey) {
-      if (this.key && !oldKey) {
-        for (var tagName in this.relationships) {
-          var rel = this.relationships[tagName];
-          
-          if (this.getAttribute('retrive-' + rel) !== null) {
-            this._retriveOn(rel, document.createElement(tagName).path);
-          }
-        }
+      if (oldKey) {
+        this._unitilialize();
+        this._initialize();
+      }
+    },
+    
+    _relation: function (tagName) {
+      var rel = Polymer.dom(this.root).querySelector(tagName);
+      
+      if (!rel) {
+        rel = document.createElement(tagName);
+        Polymer.dom(this.root).appendChild(rel);
+      }
+      
+      return rel;
+    },
+    
+    _resetAssocKeys: function (type, path) {
+      this.set(['assocKeys', path], type === 'relationship' ? [] : '');
+    },
+    
+    _initializeRelations: function (type, rel, tagName) {
+      if (typeof rel === 'string') {
+        this._relations[tagName] = {
+          type: type,
+          path: rel,
+          destroy: false,
+          vanish: false
+        };
+      } else {
+        this._relations[tagName] = {
+          type: type,
+          path: rel.path || '',
+          destroy: rel.destroy || false,
+          vanish: rel.vanish || false
+        };
       }
     }
-    
   };
   
   VA.ModelBehavior = [
