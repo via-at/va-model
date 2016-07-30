@@ -10,12 +10,33 @@
     this._rootPath = this._rootRef.toString();
   };
   
+  VA.Transaction.prototype._hasAncestor = function (path) {
+    for (var p in this._transactions) {
+      if (path.match(new RegExp('^' + p))) {
+        return true;
+      }
+    }
+    return false;
+  };
+  
+  VA.Transaction.prototype._removeDescendants = function (path) {
+    for (var p in this._transactions) {
+      if (p.match(new RegExp('^' + path))) {
+        delete this._transactions[p];
+      }
+    }
+  };
+  
   VA.Transaction.prototype.appName = function () {
     return this._appName;
   };
   
   VA.Transaction.prototype.push = function (path, value) {
-    this._transactions[path.replace(this._rootPath, '/')] = value;
+    var p = path.replace(this._rootPath, '/');
+    this._removeDescendants(p);
+    if (!this._hasAncestor(p)) {
+      this._transactions[p] = value;
+    }
   };
   
   VA.Transaction.prototype.list = function () {
@@ -160,7 +181,6 @@
           transaction.merge(target.unlink(this, true));
         }
         
-        console.log(transaction)
         return transaction;
       }
     },
@@ -170,7 +190,7 @@
       var ref;
       
       if (elem.isRelationship(this.is)) {
-        ref = elem.orderByModel(this).equalTo(true);
+        ref = elem.orderByModel(this, key).equalTo(true);
       } else if (elem.isParent(this.is)) {
         ref = elem.orderByModel(this).equalTo(key);
       }
@@ -282,13 +302,13 @@
       return this.key && elem.key && elem.is in this._relations;
     },
     
-    orderByModel: function (elem) {
+    orderByModel: function (elem, key) {
       var ref;
       
       if (this.isParent(elem.is)) {
         ref = this.ref.orderByChild(this.relationPath(elem.is));
       } else if (this.isRelationship(elem.is)) {
-        ref = this.ref.orderByChild(this.relationPath(elem.is) + '/' + elem.key);
+        ref = this.ref.orderByChild(this.relationPath(elem.is) + '/' + key || elem.key);
       }
       
       return ref;
