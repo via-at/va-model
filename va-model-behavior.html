@@ -268,13 +268,15 @@
      * @override
      */
     setStoredValue: function (path, value) {
-      var keys = Object.getOwnPropertyNames(value);
-      
-      if (this.key && keys.length > 0) {
-        if (Object.getOwnPropertyNames(this.preData).length === 0) {
-          this.preData = this.data;
+      if (value) {
+        var keys = Object.getOwnPropertyNames(value);
+        
+        if (this.key && keys.length > 0) {
+          if (Object.getOwnPropertyNames(this.preData).length === 0) {
+            this.preData = this.data;
+          }
+          this.ref.child(this.key).set(value);
         }
-        this.ref.child(this.key).set(value);
       }
     },
     
