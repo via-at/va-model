@@ -6,6 +6,8 @@
     this._appName = appName;
     this._db = app ? app.database() : null;
     this._transactions = {};
+    this._rootRef = this._db.ref().root;
+    this._rootPath = this._rootRef.toString();
   };
   
   VA.Transaction.prototype.appName = function () {
@@ -13,7 +15,7 @@
   };
   
   VA.Transaction.prototype.push = function (path, value) {
-    this._transactions[path] = value;
+    this._transactions[path.replace(this._rootPath, '/')] = value;
   };
   
   VA.Transaction.prototype.list = function () {
@@ -34,7 +36,7 @@
   };
   
   VA.Transaction.prototype.update = function () {
-    this._db.ref.root.update(this._transactions);
+    this._rootRef.update(this._transactions);
   };
   
   VA.ModelBehaviorImpl = {
@@ -50,12 +52,18 @@
         type: String
       },
       
-      data: {
-        type: Object
+      preview: {
+        notify: true,
+        readOnly: true
       },
       
       preData: {
-        type: Object
+        type: Object,
+        notify: true,
+        value: function () {
+          return this.zeroValue;
+        },
+        readOnly: true
       },
       
       parents: {
@@ -95,7 +103,9 @@
     },
     
     create: function () {
-      this.ref.push(this.preData);
+      var transaction = this.transaction();
+      transaction.push(this.ref.push().toString(), this.preData);
+      return transaction;
     },
     
     attached: function () {
@@ -150,40 +160,79 @@
           transaction.merge(target.unlink(this, true));
         }
         
+        console.log(transaction)
         return transaction;
       }
     },
     
-    remove: function () {
-      if (this.key) {
+    _listenOnDep: function (tagName, key, resolve, reject) {
+      var elem = this._relation(tagName);
+      var ref;
+      
+      if (elem.isRelationship(this.is)) {
+        ref = elem.orderByModel(this).equalTo(true);
+      } else if (elem.isParent(this.is)) {
+        ref = elem.orderByModel(this).equalTo(key);
+      }
+      
+      ref.once('value', function (snapshot) {
+        var transaction = this.transaction();
+      
+        if (this._relations[tagName].destroy) {
+          var promises = [];
+          
+          snapshot.forEach(function (s) {
+            promises.push(elem.remove(s.key));
+          }.bind(this));
+          
+          Promise.all(promises).then(function (transactions) {
+            transactions.forEach(function (t) {
+              transaction.merge(t);
+            });
+            
+            resolve(transaction);
+          });
+        } else {
+          snapshot.forEach(function (s) {
+            if (elem.isRelationship(this.is)) {
+              transaction.push(s.ref.toString() + '/' + elem.relationPath(this.is) + '/' + key, null);
+            } else if (elem.isParent(this.is)) {
+              transaction.push(s.ref.toString() + '/' + elem.relationPath(this.is), null);
+            }
+          }.bind(this));
+          
+          resolve(transaction);
+        }
+      }.bind(this));
+    },
+    
+    remove: function (key) {
+      key = this.key || key;
+      
+      if (key) {
         var promises = [];
         
         for (var tagName in this.relationships) {
-          promises.push(new Promise(function (resolve, reject) {
-            var ref = this._relation(tagName).orderByModel(this).equalTo(true);
-            var root = this.ref.root.toString();
-            
-            ref.once('value', function (snapshot) {
-              var refs = [];
-              snapshot.forEach(function (s) {
-                //refs.push(s.ref.toString().replace(root, '') + '/' + docPath);
-                console.log(s.ref.toString());
-              });
-              resolve(refs);
-            });
-          }.bind(this)));
+          promises.push(new Promise(this._listenOnDep.bind(this, tagName, key)));
+        }
+        for (var tagName in this.parents) {
+          promises.push(new Promise(this._listenOnDep.bind(this, tagName, key)));
         }
         
-        Promise.all(promises).then(function (refs) {
-          var transaction = {};
+        return Promise.all(promises).then(function (transactions) {
+          var transaction = this.transaction();
           
-          for (var i in refs) {
-            for (var j in refs[i]) {
-              transaction[refs[i][j]] = null;
-            }
+          transactions.forEach(function (t) {
+            transaction.merge(t);
+          })
+          
+          if (!this.key) {
+            transaction.push(this.path + '/' + key, null);
+          } else {
+            transaction.push(this.basePath(), null);
           }
           
-          transaction[this.path + '/' + this.key] = null;
+          return transaction;
         }.bind(this));
       }
     },
@@ -192,7 +241,7 @@
      * @override
      */
     save: function () {
-      this.data = this.preData;
+      this._setData(this.preData);
     },
     
     /**
@@ -202,7 +251,9 @@
       var keys = Object.getOwnPropertyNames(value);
       
       if (this.key && keys.length > 0) {
-        console.log(value, this.key)
+        if (Object.getOwnPropertyNames(this.preData).length === 0) {
+          this.preData = this.data;
+        }
         this.ref.child(this.key).set(value);
       }
     },
@@ -249,9 +300,9 @@
     
     _unlinkedRelationship: function (path, snapshot) {
       var index;
-      var len = this.assocKeys.path.length;
+      var len = this.assocKeys[path].length;
       for (index = 0; index < len; index++) {
-        if (this.assocKeys.path[index] === snapshot.key) {
+        if (this.assocKeys[path][index] === snapshot.key) {
           break;
         }
       }
@@ -264,6 +315,7 @@
     
     _changedData: function (snapshot) {
       this.data = snapshot.val();
+      this._setPreview(this.data);
     },
     
     _unitilialize: function () {
