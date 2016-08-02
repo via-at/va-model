@@ -48,10 +48,12 @@
       if (this._appName === transaction.appName()) {
         var lists = transaction.list();
         for (var path in lists) {
-          this._transactions[path] = lists[path];
+          this.push(path, lists[path]);
         }
       } else {
-        console.warn("Source app name '" + transaction.appName() + "' and destination app name '" + this._appName +"' are difference.");
+        console.warn("Source app name '"
+          + transaction.appName() + "' and destination app name '"
+          + this._appName + "' are difference.");
       }
     }
   };
@@ -69,8 +71,12 @@
         observer: '_keyChanged'
       },
       
-      path: {
-        type: String
+      parents: {
+        type: Object
+      },
+      
+      relationships: {
+        type: Object
       },
       
       preview: {
@@ -83,16 +89,7 @@
         notify: true,
         value: function () {
           return this.zeroValue;
-        },
-        readOnly: true
-      },
-      
-      parents: {
-        type: Object
-      },
-      
-      relationships: {
-        type: Object
+        }
       },
       
       assocKeys: {
@@ -100,6 +97,28 @@
         value: function () {
           return {};
         }
+      },
+            
+      preset: {
+        notify: true,
+        type: Boolean,
+        value: true
+      },
+      
+      valid: {
+        notify: true,
+        type: Boolean,
+        value: false
+      },
+      
+      validation: {
+        notify: true,
+        type: Object
+      },
+      
+      errorMessages: {
+        notify: true,
+        type: Object
       },
       
       _relations: {
@@ -122,6 +141,12 @@
     get zeroValue() {
       return {};
     },
+    
+    reset: function () {
+      this.valid = false;
+    },
+    
+        
     
     create: function () {
       var transaction = this.transaction();
@@ -349,6 +374,7 @@
       this.assocKeys = {};
       this.data = this.zeroValue;
       this.preData = this.zeroValue;
+      this._setPreview(this.data);
     },
     
     _refOn: function (type, path, callback) {
@@ -416,6 +442,51 @@
           vanish: rel.vanish || false
         };
       }
+    },
+    
+    _preset: function () {
+      var keys;
+      
+      if (this.preset && !this.preData) {
+        keys = Object.getOwnPropertyNames(this.data);
+        
+        if (keys.length > 0) {
+          this.set('preData', {});
+          keys.forEach(function (key) {
+            this.set('preData.' + key, this.data[key]);
+          }.bind(this));
+        }
+      }
+    },
+    
+    _validateByPath: function (data) {
+      var matched;
+      
+      if (data.path === 'preData') {
+        Object.getOwnPropertyNames(this.preData).forEach(function (key) {
+          this._validate(key, this.get('preData.' + key));
+        }.bind(this));
+      } else {
+        matched = data.path.match('^preData\.(.*)');
+        this._validate(matched[1], this.get(matched[0]));
+        this.valid = this._validAll();
+      }
+    },
+    
+    _validate: function (field, value) {
+      this.set('validation.' + field, value.length > 0);
+    },
+    
+    _validAll: function () {
+      var keys = Object.getOwnPropertyNames(this.validation);
+      
+      for(var key in this.validation) {
+        if (!this.validation[key]) {
+          return false;
+        }
+      }
+      
+      return true;
     }
   };
   
