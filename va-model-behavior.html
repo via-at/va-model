@@ -144,10 +144,8 @@
       this.valid = false;
     },
     
-    create: function () {
-      var transaction = this.transaction();
-      transaction.push(this.ref.push().toString(), this.preData);
-      return transaction;
+    generateKey: function () {
+      return this.ref.push().key;
     },
     
     attached: function () {
@@ -158,6 +156,8 @@
       for (var tagName in this.relationships) {
         this._initializeRelations('relationship', this.relationships[tagName], tagName);
       }
+      
+      this._initialize();
     },
     
     detached: function () {
@@ -357,7 +357,6 @@
     
     _changedData: function (snapshot) {
       this.data = snapshot.val();
-      console.log(this.basePath(), this.data)
       this._setPreview(this.data);
       if (Object.getOwnPropertyNames(this.preData).length === 0) {
         for (var key in this.data) {
@@ -406,12 +405,8 @@
     },
     
     _keyChanged: function (newKey, oldKey) {
+      this._unitilialize();
       this._initialize();
-        
-      if (oldKey) {
-        this._unitilialize();
-        this._initialize();
-      }
     },
     
     _relation: function (tagName) {
