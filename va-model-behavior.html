@@ -22,6 +22,14 @@
   VA.Transaction.prototype._removeDescendants = function (path) {
     for (var p in this._transactions) {
       if (p.match(new RegExp('^' + path))) {
+        var ar = p.split('/');
+        var br = path.split('/');
+        if (ar.length === br.length) {
+          var last = ar.length - 1;
+          if (ar[last] !== br[last]) {
+            continue;
+          }
+        }
         delete this._transactions[p];
       }
     }
@@ -33,10 +41,13 @@
   
   VA.Transaction.prototype.push = function (path, value) {
     var p = path.replace(this._rootPath, '/');
+    
     this._removeDescendants(p);
     if (!this._hasAncestor(p)) {
       this._transactions[p] = value;
     }
+    
+    return this;
   };
   
   VA.Transaction.prototype.list = function () {
@@ -56,6 +67,8 @@
           + this._appName + "' are difference.");
       }
     }
+    
+    return this;
   };
   
   VA.Transaction.prototype.update = function () {
@@ -121,6 +134,12 @@
         }
       },
       
+      _relationPaths: {
+        value: function () {
+          return [];
+        }
+      },
+      
       _refs: {
         value: function () {
           return [];
@@ -148,7 +167,7 @@
       return this.ref.push().key;
     },
     
-    attached: function () {
+    ready: function () {
       for (var tagName in this.parents) {
         this._initializeRelations('parent', this.parents[tagName], tagName);
       }
@@ -156,7 +175,9 @@
       for (var tagName in this.relationships) {
         this._initializeRelations('relationship', this.relationships[tagName], tagName);
       }
-      
+    },
+    
+    attached: function () {
       this._initialize();
     },
     
@@ -280,17 +301,26 @@
      * @override
      */
     save: function () {
+      var transaction = this.transaction();
+      
       for (var key in this.preData) {
-        this.data[key] = this.preData[key];
+        if (!this._isRelationPath(key)) {
+          transaction.push(this.basePath() + '/' + key, this.preData[key]);
+        }
       }
       
-      return Promise.resolve();
+      return transaction;
     },
     
     /**
      * @override
      */
     setStoredValue: function (path, value) {
+      if (this._isRelationPath(path)) {
+        console.warn('You would update a value which is relation path. Ignoring.');
+        return;
+      }
+      
       if (value) {
         var keys = Object.getOwnPropertyNames(value);
         
@@ -336,8 +366,17 @@
       return ref;
     },
     
+    _isRelationPath: function (path) {
+      return this._relationPaths.indexOf(path) >= 0;
+    },
+    
     _linkedRelationship: function (path, snapshot) {
-      this.push(['assocKeys', path], snapshot.key);
+      var p = ['assocKeys', path];
+      var key = snapshot.key;
+      var keys = this.get(p);
+      if (keys.indexOf(key) === -1) {
+        this.push(p, key);
+      }
     },
     
     _unlinkedRelationship: function (path, snapshot) {
@@ -440,19 +479,23 @@
           vanish: rel.vanish || false
         };
       }
+      
+      this._relationPaths.push(this._relations[tagName].path);
     },
     
     _validateByPath: function (data) {
-      var matched;
-      
-      if (data.path === 'preData') {
-        Object.getOwnPropertyNames(this.preData).forEach(function (key) {
-          this._validate(key, this.get('preData.' + key));
-        }.bind(this));
-      } else {
-        matched = data.path.match('^preData\.(.*)');
-        this._validate(matched[1], this.get(matched[0]));
-        this.valid = this._validAll();
+      if (this.validation) {
+        var matched;
+        
+        if (data.path === 'preData') {
+          Object.getOwnPropertyNames(this.preData).forEach(function (key) {
+            this._validate(key, this.get('preData.' + key));
+          }.bind(this));
+        } else {
+          matched = data.path.match('^preData\.(.*)');
+          this._validate(matched[1], this.get(matched[0]));
+          this.valid = this._validAll();
+        }
       }
     },
     
