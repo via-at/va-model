@@ -112,22 +112,6 @@
         }
       },
       
-      valid: {
-        notify: true,
-        type: Boolean,
-        value: false
-      },
-      
-      validation: {
-        notify: true,
-        type: Object
-      },
-      
-      errorMessages: {
-        notify: true,
-        type: Object
-      },
-      
       _relations: {
         value: function () {
           return {};
@@ -147,20 +131,12 @@
       }
     },
     
-    observers: [
-      '_validateByPath(preData.*)'
-    ],
-    
     get isNew() {
       return !this.path;
     },
     
     get zeroValue() {
       return {};
-    },
-    
-    reset: function () {
-      this.valid = false;
     },
     
     generateKey: function () {
@@ -481,38 +457,6 @@
       }
       
       this._relationPaths.push(this._relations[tagName].path);
-    },
-    
-    _validateByPath: function (data) {
-      if (this.validation) {
-        var matched;
-        
-        if (data.path === 'preData') {
-          Object.getOwnPropertyNames(this.preData).forEach(function (key) {
-            this._validate(key, this.get('preData.' + key));
-          }.bind(this));
-        } else {
-          matched = data.path.match('^preData\.(.*)');
-          this._validate(matched[1], this.get(matched[0]));
-          this.valid = this._validAll();
-        }
-      }
-    },
-    
-    _validate: function (field, value) {
-      this.set('validation.' + field, value.length > 0);
-    },
-    
-    _validAll: function () {
-      var keys = Object.getOwnPropertyNames(this.validation);
-      
-      for(var key in this.validation) {
-        if (!this.validation[key]) {
-          return false;
-        }
-      }
-      
-      return true;
     }
   };
   
