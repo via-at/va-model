@@ -72,7 +72,7 @@
   };
   
   VA.Transaction.prototype.update = function () {
-    this._rootRef.update(this._transactions);
+    return this._rootRef.update(this._transactions);
   };
   
   VA.ModelBehaviorImpl = {
@@ -277,6 +277,10 @@
      * @override
      */
     save: function () {
+      return this.update().update();
+    },
+    
+    update: function () {
       var transaction = this.transaction();
       
       for (var key in this.preData) {
