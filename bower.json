@@ -1,6 +1,6 @@
 {
   "name": "va-model",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "The model that interacts with Firebase using Polymer.",
   "main": [
     "va-model-behavior.html"
