@@ -1,7 +1,7 @@
 <link rel="import" href="../polymerfire/firebase-database-behavior.html">
 
 <script>
-  VA.Transaction = function Transaction(appName) {
+  VA.ModelTransaction = function Transaction(appName) {
     var app = appName ? firebase.app(appName) : firebase.app();
     this._appName = appName;
     this._db = app ? app.database() : null;
@@ -10,7 +10,7 @@
     this._rootPath = this._rootRef.toString();
   };
   
-  VA.Transaction.prototype._hasAncestor = function (path) {
+  VA.ModelTransaction.prototype._hasAncestor = function (path) {
     for (var p in this._transactions) {
       if (path.match(new RegExp('^' + p))) {
         return true;
@@ -19,7 +19,7 @@
     return false;
   };
   
-  VA.Transaction.prototype._removeDescendants = function (path) {
+  VA.ModelTransaction.prototype._removeDescendants = function (path) {
     for (var p in this._transactions) {
       if (p.match(new RegExp('^' + path))) {
         var ar = p.split('/');
@@ -35,11 +35,11 @@
     }
   };
   
-  VA.Transaction.prototype.appName = function () {
+  VA.ModelTransaction.prototype.appName = function () {
     return this._appName;
   };
   
-  VA.Transaction.prototype.push = function (path, value) {
+  VA.ModelTransaction.prototype.push = function (path, value) {
     var p = path.replace(this._rootPath, '/');
     
     this._removeDescendants(p);
@@ -50,12 +50,12 @@
     return this;
   };
   
-  VA.Transaction.prototype.list = function () {
+  VA.ModelTransaction.prototype.list = function () {
     return this._transactions;
   };
   
-  VA.Transaction.prototype.merge = function (transaction) {
-    if (transaction instanceof VA.Transaction) {
+  VA.ModelTransaction.prototype.merge = function (transaction) {
+    if (transaction instanceof VA.ModelTransaction) {
       if (this._appName === transaction.appName()) {
         var lists = transaction.list();
         for (var path in lists) {
@@ -71,7 +71,7 @@
     return this;
   };
   
-  VA.Transaction.prototype.update = function () {
+  VA.ModelTransaction.prototype.update = function () {
     return this._rootRef.update(this._transactions);
   };
   
@@ -82,6 +82,10 @@
       key: {
         type: String,
         observer: '_keyChanged'
+      },
+
+      child: {
+        type: String
       },
       
       parents: {
@@ -162,7 +166,7 @@
     },
     
     transaction: function () {
-      return new VA.Transaction(this.appName);
+      return new VA.ModelTransaction(this.appName);
     },
     
     link: function (target, nonInverse) {
@@ -384,7 +388,7 @@
       }
     },
     
-    _unitilialize: function () {
+    _uninitialize: function () {
       this._refs.forEach(function (ref) {
         this.db.ref(ref.path).off(ref.type, ref.callback);
       }.bind(this));
@@ -406,25 +410,31 @@
     },
     
     _initialize: function () {
-      this._refOn('value', this.basePath(), this._changedData.bind(this));
-      
-      for (var tagName in this._relations) {
-        var rel = this._relations[tagName];
-        var path = this.basePath() + '/' + rel.path;
-        
-        this._resetAssocKeys(rel.type, rel.path);
-        
-        if (rel.type === 'parent') {
-          this._refOn('value', path, this._changedParent.bind(this, rel.path));
-        } else if (rel.type === 'relationship') {
-          this._refOn('child_added', path, this._linkedRelationship.bind(this, rel.path));
-          this._refOn('child_removed', path, this._unlinkedRelationship.bind(this, rel.path));
+      var basePath = this.basePath();
+
+      if (this.child) {
+        basePath += '/' + this.child;
+      } else {
+        for (var tagName in this._relations) {
+          var rel = this._relations[tagName];
+          var path = basePath + '/' + rel.path;
+
+          this._resetAssocKeys(rel.type, rel.path);
+
+          if (rel.type === 'parent') {
+            this._refOn('value', path, this._changedParent.bind(this, rel.path));
+          } else if (rel.type === 'relationship') {
+            this._refOn('child_added', path, this._linkedRelationship.bind(this, rel.path));
+            this._refOn('child_removed', path, this._unlinkedRelationship.bind(this, rel.path));
+          }
         }
       }
+
+      this._refOn('value', basePath, this._changedData.bind(this));
     },
     
-    _keyChanged: function (newKey, oldKey) {
-      this._unitilialize();
+    _keyChanged: function (/* newKey, oldKey */) {
+      this._uninitialize();
       this._initialize();
     },
     
